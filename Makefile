@@ -1,4 +1,4 @@
-CFLAGS= -std=c++11
+CFLAGS=
 LDFLAGS=`pkg-config --static --libs glfw3` -lvulkan
 
 .PHONY: test clean
