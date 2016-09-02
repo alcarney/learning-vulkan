@@ -21,7 +21,7 @@ class VDeleter {
 
         // Wut...
         VDeleter(std::function<void(T, VkAllocationCallbacks*)> deletef) {
-            this->deleter = [=](T obj) {delete(obj, nullptr); };
+            this->deleter = [=](T obj) {deletef(obj, nullptr); };
         }
 
         // Wut..
@@ -85,6 +85,9 @@ class App {
         // The GLFW window object
         GLFWwindow* window;
 
+        // The Vulkan instnce object
+        VDeleter<VkInstance> instance {vkDestroyInstance};
+
         /*
          * This function invokes GLFW and will create a window for us to
          * display our stuff in.
@@ -104,7 +107,62 @@ class App {
             window = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan", nullptr, nullptr);
         }
 
-        void initVulkan() {}
+        // ------------------------ INITIALIZING VULKAN -----------------------
+
+        /*
+         * This function performs all the actions necessary to get vulkan to
+         * a state to draw something on screen.
+         */
+        void initVulkan() {
+
+            // Step 1: Create an instance
+            createInstance();
+        }
+
+        /*
+         * This function is responsible for creating the vulkan instance
+         */
+        void createInstance() {
+
+            // First off we need to tell the driver some information about our
+            // application
+            VkApplicationInfo appInfo = {};
+            appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+            appInfo.pApplicationName = "Demo Triangle";
+            appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
+            appInfo.pEngineName = "No Name";
+            appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
+            appInfo.apiVersion = VK_API_VERSION_1_0;
+
+            // Next is another struct which tells Vulkan which extensions
+            // and validation layers we will want to use
+            VkInstanceCreateInfo createInfo = {};
+            createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+            createInfo.pApplicationInfo = &appInfo;
+
+            unsigned int glfwExtensionCount = 0;
+            const char** glfwExtensions;
+
+            // Ask GLFW for the extensions it needs to get vulkan ta;lking to
+            // the windowing system
+            glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
+
+            // And tell Vulkan about them
+            createInfo.enabledExtensionCount = glfwExtensionCount;
+            createInfo.ppEnabledExtensionNames = glfwExtensions;
+
+            // Now tell Vulkan about the validation layers we will be using
+            // (None for now)
+            createInfo.enabledLayerCount = 0;
+
+            // Finally we have everything in place, time to tell Vulkan to make
+            // an instance for us
+            if(vkCreateInstance(&createInfo, nullptr, &instance) != VK_SUCCESS) {
+
+                throw std::runtime_error("Failed to create instance!!");
+            }
+        }
+
         void mainLoop() {
 
             // Keep the main window open till it's asked to close
