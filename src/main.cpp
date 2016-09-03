@@ -8,6 +8,19 @@
 #include <vector>
 
 /*
+ * This struct will tell us which index? a certain
+ * queue family can be found. -1 denotes the family
+ * not being found.
+ */
+struct QueueFamilyIndices {
+    int graphicsFamily = -1;
+
+    bool isComplete() {
+        return graphicsFamily >= 0;
+    }
+};
+
+/*
  * This function looks up the debug callback function
  * destructor and loads it for us
  */
@@ -145,6 +158,9 @@ class App {
         VDeleter<VkDebugReportCallbackEXT>
             callback {instance, DestroyDebugReportCallbackEXT};
 
+        // Reference to the hardware we will run on
+        VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
+
         /*
          * This function invokes GLFW and will create a window for us to
          * display our stuff in.
@@ -177,6 +193,9 @@ class App {
 
             // Step 2: Setup debug callbacks
             setupDebugCallback();
+
+            // Step 3: Choosing a hardware device
+            pickPhysicalDevice();
         }
 
         /*
@@ -330,6 +349,87 @@ class App {
 
             return extensions;
         }
+
+        /*
+         * This function is responsible for choosing the hardware device to run on
+         */
+        void pickPhysicalDevice() {
+
+            // We will choose the device from a list of available hardware
+            // but first off we need to count them all.
+            uint32_t deviceCount = 0;
+            vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);
+
+            // If no devices are found then we won't be able to do anything!!
+            if (deviceCount == 0) {
+                throw std::runtime_error("Unable to find Vulkan compatible hardware!!");
+            }
+
+            // Put all the available devices in a list
+            std::vector<VkPhysicalDevice> devices(deviceCount);
+            vkEnumeratePhysicalDevices(instance, &deviceCount, devices.data());
+
+            // We will pick the first device that matches our needs
+            for (const auto& device : devices) {
+                if (isDeviceSuitable(device)) {
+                    physicalDevice = device;
+                    break;
+                }
+            }
+
+            // If nothing is suitable then...
+            if (physicalDevice == VK_NULL_HANDLE) {
+                throw std::runtime_error("Unable to find a suitable device!!");
+            }
+
+        }
+
+        /*
+         * This will return the indices of the queue families
+         */
+        QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device) {
+            QueueFamilyIndices indices;
+
+            // Get all of the queue type supported on this device
+            uint32_t queueFamilyCount = 0;
+            vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
+
+            std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
+            vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.data());
+
+            // For our purposes we need a queue which supports
+            // VK_QUEUE_GRAPHICS_BIT
+            int i = 0;
+
+            for (const auto& queueFamily : queueFamilies) {
+                if (queueFamily.queueCount > 0 &&
+                        queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
+                    indices.graphicsFamily = i;
+                }
+
+                if (indices.isComplete()) {
+                    break;
+                }
+
+                i++;
+            }
+
+            return indices;
+        }
+
+        /*
+         * This function will look at a physical device and decide if it is
+         * "suitable"
+         *
+         * In our case a device is suitable if it supports a graphics queue
+         */
+        bool isDeviceSuitable(VkPhysicalDevice device) {
+
+            QueueFamilyIndices indices = findQueueFamilies(device);
+            return indices.isComplete();
+        }
+
+        // -----------------------------------------------------------------------
 
         void mainLoop() {
 
