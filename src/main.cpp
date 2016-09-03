@@ -161,6 +161,12 @@ class App {
         // Reference to the hardware we will run on
         VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
 
+        // Reference to the logical device we will use
+        VDeleter<VkDevice> device{vkDestroyDevice};
+
+        // Reference to our graphics queue
+        VkQueue graphicsQueue;
+
         /*
          * This function invokes GLFW and will create a window for us to
          * display our stuff in.
@@ -196,6 +202,9 @@ class App {
 
             // Step 3: Choosing a hardware device
             pickPhysicalDevice();
+
+            // Step 4: Creating a logical device
+            createLogicalDevice();
         }
 
         /*
@@ -427,6 +436,63 @@ class App {
 
             QueueFamilyIndices indices = findQueueFamilies(device);
             return indices.isComplete();
+        }
+
+        /*
+         * This function will setup the logical device.
+         *
+         * The logical device is responsible for controlling our
+         * hardware device??
+         */
+        void createLogicalDevice() {
+
+            // First we need to specify the queues we want created
+            // For now a single graphics queue will suffice
+            QueueFamilyIndices indices = findQueueFamilies(physicalDevice);
+
+            VkDeviceQueueCreateInfo queueCreateInfo = {};
+            queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+            queueCreateInfo.queueFamilyIndex = indices.graphicsFamily;
+            queueCreateInfo.queueCount = 1;
+
+            // Even though we have a single queue the scheduler will want us
+            // to assign a priority to it
+            float queuePriority = 1.0f;
+            queueCreateInfo.pQueuePriorities = &queuePriority;
+
+            // Eventually we will have to specify the features of the device
+            // we will need
+            VkPhysicalDeviceFeatures deviceFeatures = {};
+
+            // Finally we can bring this together and specify the features of
+            // the logical device we need, starting with the desired queues and
+            // device features.
+            VkDeviceCreateInfo createInfo = {};
+            createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+            createInfo.pQueueCreateInfos = &queueCreateInfo;
+            createInfo.queueCreateInfoCount = 1;
+            createInfo.pEnabledFeatures = &deviceFeatures;
+
+            // As with the instance we need to specify any validation
+            // layers we want applied to the device
+            createInfo.enabledExtensionCount = 0;
+
+            if (enableValidationLayers) {
+                createInfo.enabledLayerCount = validationLayers.size();
+                createInfo.ppEnabledLayerNames = validationLayers.data();
+            } else {
+                createInfo.enabledLayerCount = 0;
+            }
+
+            // So we can now actually create the device
+            if (vkCreateDevice(physicalDevice, &createInfo, nullptr, &device)
+                    != VK_SUCCESS) {
+                throw std::runtime_error("Unable to create the logical device!!");
+            }
+
+            // With our logical device created the queues we asked for will also
+            // have been created, Time to find out where they live...
+            vkGetDeviceQueue(device, indices.graphicsFamily, 0, &graphicsQueue);
         }
 
         // -----------------------------------------------------------------------
