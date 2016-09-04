@@ -191,6 +191,12 @@ class App {
         // Refernece to the swap chain
         VDeleter<VkSwapchainKHR> swapChain{device, vkDestroySwapchainKHR};
 
+        // Reference to the image queue in the swap chain along the image
+        // properties
+        std::vector<VkImage> swapChainImages;
+        VkFormat swapChainImageFormat;
+        VkExtent2D swapChainExtent;
+
         // References to our queues
         VkQueue graphicsQueue;
         VkQueue presentQueue;
@@ -713,6 +719,21 @@ class App {
             if (vkCreateSwapchainKHR(device, &createInfo, nullptr, &swapChain) != VK_SUCCESS) {
                 throw std::runtime_error("Unable to create the swap chain!!");
             }
+
+            /*
+             * The vulkan implementation is allowed to create more images than we asked for
+             * so we need to check to see how many it actually created for us, along with
+             * getting the reference to the image queue created by the swap chain.
+             */
+            vkGetSwapchainImagesKHR(device, swapChain, &imageCount, nullptr);
+            swapChainImages.resize(imageCount);
+            vkGetSwapchainImagesKHR(device, swapChain, &imageCount, swapChainImages.data());
+
+            // Also don't forget to make a note of the extent and image format we chose
+            // as we'll need those later.
+            swapChainImageFormat = surfaceFormat.format;
+            swapChainExtent = extent;
+
         }
 
         /*
