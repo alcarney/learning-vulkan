@@ -4,6 +4,7 @@
 #include <cstring>
 #include <functional>
 #include <iostream>
+#include <set>
 #include <stdexcept>
 #include <vector>
 
@@ -14,9 +15,11 @@
  */
 struct QueueFamilyIndices {
     int graphicsFamily = -1;
+    int presentFamily = -1;
 
     bool isComplete() {
-        return graphicsFamily >= 0;
+        return graphicsFamily >= 0 &&
+               presentFamily >= 0;
     }
 };
 
@@ -158,14 +161,18 @@ class App {
         VDeleter<VkDebugReportCallbackEXT>
             callback {instance, DestroyDebugReportCallbackEXT};
 
+        // Window surface
+        VDeleter<VkSurfaceKHR> surface{instance, vkDestroySurfaceKHR};
+
         // Reference to the hardware we will run on
         VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
 
         // Reference to the logical device we will use
         VDeleter<VkDevice> device{vkDestroyDevice};
 
-        // Reference to our graphics queue
+        // References to our queues
         VkQueue graphicsQueue;
+        VkQueue presentQueue;
 
         /*
          * This function invokes GLFW and will create a window for us to
@@ -200,10 +207,13 @@ class App {
             // Step 2: Setup debug callbacks
             setupDebugCallback();
 
-            // Step 3: Choosing a hardware device
+            // Step 3: Creating a surface
+            createSurface();
+
+            // Step 4: Choosing a hardware device
             pickPhysicalDevice();
 
-            // Step 4: Creating a logical device
+            // Step 5: Creating a logical device
             createLogicalDevice();
         }
 
@@ -360,6 +370,16 @@ class App {
         }
 
         /*
+         * This function will create the surface that will allow us to draw
+         * stuff
+         */
+        void createSurface() {
+            if (glfwCreateWindowSurface(instance, window, nullptr, &surface) != VK_SUCCESS) {
+                throw std::runtime_error("Unable to create the window surafce!!");
+            }
+        }
+
+        /*
          * This function is responsible for choosing the hardware device to run on
          */
         void pickPhysicalDevice() {
@@ -406,14 +426,22 @@ class App {
             std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
             vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.data());
 
-            // For our purposes we need a queue which supports
-            // VK_QUEUE_GRAPHICS_BIT
             int i = 0;
 
             for (const auto& queueFamily : queueFamilies) {
+
+                // Check for graphics queue support
                 if (queueFamily.queueCount > 0 &&
                         queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
                     indices.graphicsFamily = i;
+                }
+
+                // Check for 'present support'
+                VkBool32 presentSupport = false;
+                vkGetPhysicalDeviceSurfaceSupportKHR(device, i, surface, &presentSupport);
+
+                if (queueFamily.queueCount > 0 && presentSupport) {
+                    indices.presentFamily = i;
                 }
 
                 if (indices.isComplete()) {
@@ -430,7 +458,9 @@ class App {
          * This function will look at a physical device and decide if it is
          * "suitable"
          *
-         * In our case a device is suitable if it supports a graphics queue
+         * In our case a device is suitable if:
+         *   - it supports a graphics queue
+         *   - it has present support
          */
         bool isDeviceSuitable(VkPhysicalDevice device) {
 
@@ -450,15 +480,21 @@ class App {
             // For now a single graphics queue will suffice
             QueueFamilyIndices indices = findQueueFamilies(physicalDevice);
 
-            VkDeviceQueueCreateInfo queueCreateInfo = {};
-            queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-            queueCreateInfo.queueFamilyIndex = indices.graphicsFamily;
-            queueCreateInfo.queueCount = 1;
+            std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
+            std::set<int> uniqueQueueFamilies =
+                {indices.graphicsFamily, indices.presentFamily};
 
-            // Even though we have a single queue the scheduler will want us
-            // to assign a priority to it
             float queuePriority = 1.0f;
-            queueCreateInfo.pQueuePriorities = &queuePriority;
+            for (int queueFamily : uniqueQueueFamilies) {
+
+                VkDeviceQueueCreateInfo queueCreateInfo = {};
+                queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+                queueCreateInfo.queueFamilyIndex = queueFamily;
+                queueCreateInfo.queueCount = 1;
+                queueCreateInfo.pQueuePriorities = &queuePriority;
+
+                queueCreateInfos.push_back(queueCreateInfo);
+            }
 
             // Eventually we will have to specify the features of the device
             // we will need
@@ -469,8 +505,8 @@ class App {
             // device features.
             VkDeviceCreateInfo createInfo = {};
             createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-            createInfo.pQueueCreateInfos = &queueCreateInfo;
-            createInfo.queueCreateInfoCount = 1;
+            createInfo.pQueueCreateInfos = queueCreateInfos.data();
+            createInfo.queueCreateInfoCount = (uint32_t) queueCreateInfos.size();
             createInfo.pEnabledFeatures = &deviceFeatures;
 
             // As with the instance we need to specify any validation
@@ -493,6 +529,7 @@ class App {
             // With our logical device created the queues we asked for will also
             // have been created, Time to find out where they live...
             vkGetDeviceQueue(device, indices.graphicsFamily, 0, &graphicsQueue);
+            vkGetDeviceQueue(device, indices.presentFamily, 0, &presentQueue);
         }
 
         // -----------------------------------------------------------------------
