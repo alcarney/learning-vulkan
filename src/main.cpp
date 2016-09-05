@@ -188,6 +188,10 @@ class App {
         // Reference to the logical device we will use
         VDeleter<VkDevice> device{vkDestroyDevice};
 
+        // References to our queues
+        VkQueue graphicsQueue;
+        VkQueue presentQueue;
+
         // Refernece to the swap chain
         VDeleter<VkSwapchainKHR> swapChain{device, vkDestroySwapchainKHR};
 
@@ -197,9 +201,8 @@ class App {
         VkFormat swapChainImageFormat;
         VkExtent2D swapChainExtent;
 
-        // References to our queues
-        VkQueue graphicsQueue;
-        VkQueue presentQueue;
+        // The views into our images
+        std::vector<VDeleter<VkImageView>> swapChainImageViews;
 
         /*
          * This function invokes GLFW and will create a window for us to
@@ -245,6 +248,9 @@ class App {
 
             // Step 6: Create the Swap Chain (render queue)
             createSwapChain();
+
+            // Step 7: Create Views into our images
+            createImageViews();
         }
 
         /*
@@ -734,6 +740,48 @@ class App {
             swapChainImageFormat = surfaceFormat.format;
             swapChainExtent = extent;
 
+        }
+
+        /*
+         * This function is responsible for creating the views into our images
+         */
+        void createImageViews() {
+
+            // Resize our views to match the number of images in the swap chain
+            swapChainImageViews.resize(swapChainImages.size(),
+                                       VDeleter<VkImageView>{device, vkDestroyImageView});
+
+            // Next for each image in the chain
+            for (uint32_t i = 0; i < swapChainImages.size(); i++) {
+
+                // We will make a view for it
+                VkImageViewCreateInfo createInfo = {};
+                createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+                createInfo.image = swapChainImages[i];
+
+                // What will the image represent
+                createInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+                createInfo.format = swapChainImageFormat;
+
+                // Swizzle the components...?
+                createInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+                createInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+                createInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+                createInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+
+                // Some more info on how the image should be used
+                createInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+                createInfo.subresourceRange.baseMipLevel = 0;
+                createInfo.subresourceRange.levelCount = 1;
+                createInfo.subresourceRange.baseArrayLayer = 0;
+                createInfo.subresourceRange.layerCount = 1;
+
+                // Create the image view
+                if (vkCreateImageView(device, &createInfo, nullptr, &swapChainImageViews[i])
+                        != VK_SUCCESS) {
+                    throw std::runtime_error("Unable to create image views!!");
+                }
+            }
         }
 
         /*
