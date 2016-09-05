@@ -8,5 +8,9 @@ default: main
 main:
 	g++ $(CFLAGS) -o test src/main.cpp $(LDFLAGS)
 
+shaders:
+	glslangValidator -V shaders/shader.vert -o vert.spv
+	glslangValidator -V shaders/shader.frag -o frag.spv
+
 clean:
-	rm test
+	rm test vert.spv frag.spv

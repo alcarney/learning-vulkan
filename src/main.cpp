@@ -2,6 +2,7 @@
 #include <GLFW/glfw3.h>
 
 #include <cstring>
+#include <fstream>
 #include <functional>
 #include <iostream>
 #include <limits>
@@ -251,6 +252,9 @@ class App {
 
             // Step 7: Create Views into our images
             createImageViews();
+
+            // Step 8: Build the graphics pipeline
+            createGraphicsPipeline();
         }
 
         /*
@@ -902,6 +906,81 @@ class App {
             // have been created, Time to find out where they live...
             vkGetDeviceQueue(device, indices.graphicsFamily, 0, &graphicsQueue);
             vkGetDeviceQueue(device, indices.presentFamily, 0, &presentQueue);
+        }
+
+        /*
+         * This function will go and fetch the shader data
+         * from file for us
+         */
+        static std::vector<char> readFile(const std::string& filename) {
+
+            // Binary file. start reading from the end
+            std::ifstream file (filename, std::ios::ate | std::ios::binary);
+
+            if (!file.is_open()) {
+                throw ("Unable to open file!!");
+            }
+
+            // By reading the file from the end we have an easy way to determine
+            // the size of the file
+            size_t fileSize = (size_t) file.tellg();
+            std::vector<char> buffer(fileSize);
+
+            // Now we can just jump to the start and read everything in
+            file.seekg(0);
+            file.read(buffer.data(), fileSize);
+
+            file.close();
+            return buffer;
+        }
+
+        /*
+         * This function sets about making the shader modules.
+         */
+        void createShaderModule(const std::vector<char>& code, VDeleter<VkShaderModule>& shaderModule) {
+
+            VkShaderModuleCreateInfo createInfo = {};
+            createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+            createInfo.codeSize = code.size();
+            createInfo.pCode = (uint32_t*) code.data();
+
+            if (vkCreateShaderModule(device, &createInfo, nullptr, &shaderModule)
+                    != VK_SUCCESS) {
+                throw std::runtime_error("Unable to create shader module!!");
+            }
+        }
+
+        /*
+         * This function will set up the graphics pipeline for us
+         */
+        void createGraphicsPipeline () {
+
+            // Read in the shader code
+            auto vertShaderCode = readFile("vert.spv");
+            auto fragShaderCode = readFile("frag.spv");
+
+            // Now we need to wrap the code in a shader module
+            VDeleter<VkShaderModule> vertShaderModule{device, vkDestroyShaderModule};
+            VDeleter<VkShaderModule> fragShaderModule{device, vkDestroyShaderModule};
+
+            createShaderModule(vertShaderCode, vertShaderModule);
+            createShaderModule(fragShaderCode, fragShaderModule);
+
+            // Then we need to assemble the modules into stages
+            // telling Vulkand their purpose
+            VkPipelineShaderStageCreateInfo vertShaderStageInfo = {};
+            vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+            vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
+            vertShaderStageInfo.module = vertShaderModule;
+            vertShaderStageInfo.pName = "main";  // Function in the shader to invoke
+
+            VkPipelineShaderStageCreateInfo fragShaderStageInfo = {};
+            fragShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+            fragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+            fragShaderStageInfo.module = fragShaderModule;
+            fragShaderStageInfo.pName = "main";  // Function in the shader to invoke
+
+            VkPipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageInfo, fragShaderStageInfo};
         }
 
         // -----------------------------------------------------------------------
