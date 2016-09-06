@@ -207,6 +207,7 @@ class App {
 
         // Pipeline layout
         VDeleter<VkPipelineLayout> pipelineLayout{device, vkDestroyPipelineLayout};
+        VDeleter<VkRenderPass> renderPass{device, vkDestroyRenderPass};
 
         /*
          * This function invokes GLFW and will create a window for us to
@@ -256,7 +257,10 @@ class App {
             // Step 7: Create Views into our images
             createImageViews();
 
-            // Step 8: Build the graphics pipeline
+            // Step 8: Create Render Passes
+            createRenderPass();
+
+            // Step 9: Build the graphics pipeline
             createGraphicsPipeline();
         }
 
@@ -950,6 +954,44 @@ class App {
             if (vkCreateShaderModule(device, &createInfo, nullptr, &shaderModule)
                     != VK_SUCCESS) {
                 throw std::runtime_error("Unable to create shader module!!");
+            }
+        }
+
+        /*
+         * This function will set up our render passes
+         */
+        void createRenderPass() {
+
+            VkAttachmentDescription colorAttachment = {};
+            colorAttachment.format = swapChainImageFormat;
+            colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+            colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+            colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+            colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+            colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+            colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+            VkAttachmentReference colorAttachmentRef = {};
+            colorAttachmentRef.attachment = 0;
+            colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+            VkSubpassDescription subPass = {};
+            subPass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+            subPass.colorAttachmentCount = 1;
+            subPass.pColorAttachments = &colorAttachmentRef;
+
+            // Create the render pass
+            VkRenderPassCreateInfo renderPassInfo = {};
+            renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+            renderPassInfo.attachmentCount = 1;
+            renderPassInfo.pAttachments = &colorAttachment;
+            renderPassInfo.subpassCount = 1;
+            renderPassInfo.pSubpasses = &subPass;
+
+            if (vkCreateRenderPass(device, &renderPassInfo, nullptr, &renderPass)
+                != VK_SUCCESS) {
+                throw std::runtime_error("Unable to create render pass!!");
             }
         }
 
