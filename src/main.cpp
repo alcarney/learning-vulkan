@@ -208,6 +208,7 @@ class App {
         // Pipeline layout
         VDeleter<VkPipelineLayout> pipelineLayout{device, vkDestroyPipelineLayout};
         VDeleter<VkRenderPass> renderPass{device, vkDestroyRenderPass};
+        VDeleter<VkPipeline> graphicsPipeline{device, vkDestroyPipeline};
 
         /*
          * This function invokes GLFW and will create a window for us to
@@ -1160,6 +1161,28 @@ class App {
                 throw std::runtime_error("Unable to create the pipeline layout!!");
             }
 
+            /*
+             * We can now bring it together now and build the pipeline
+             */
+            VkGraphicsPipelineCreateInfo pipelineInfo = {};
+            pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+            pipelineInfo.stageCount = 2;
+            pipelineInfo.pStages = shaderStages;
+            pipelineInfo.pVertexInputState = &vertexInputInfo;
+            pipelineInfo.pInputAssemblyState = &inputAssembly;
+            pipelineInfo.pViewportState = &viewportState;
+            pipelineInfo.pRasterizationState = &rasterizer;
+            pipelineInfo.pMultisampleState = &multisampling;
+            pipelineInfo.pColorBlendState = &colorBlending;
+            pipelineInfo.layout = pipelineLayout;
+            pipelineInfo.renderPass = renderPass;
+            pipelineInfo.subpass = 0;
+            pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
+
+            if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo,
+                        nullptr, &graphicsPipeline) != VK_SUCCESS) {
+                throw std::runtime_error("Unable to create the graphics pipeline!!");
+            }
 
         }
 
