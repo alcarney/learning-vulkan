@@ -205,6 +205,9 @@ class App {
         // The views into our images
         std::vector<VDeleter<VkImageView>> swapChainImageViews;
 
+        // Pipeline layout
+        VDeleter<VkPipelineLayout> pipelineLayout{device, vkDestroyPipelineLayout};
+
         /*
          * This function invokes GLFW and will create a window for us to
          * display our stuff in.
@@ -981,6 +984,141 @@ class App {
             fragShaderStageInfo.pName = "main";  // Function in the shader to invoke
 
             VkPipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageInfo, fragShaderStageInfo};
+
+            // With the shaders created we need to tell Vulkan the format of
+            // our vertex data that we will be passing to it.
+            //
+            // Since we are hard coding values for now, we will simply tell
+            // Vulkan we aren't passing any data
+            VkPipelineVertexInputStateCreateInfo vertexInputInfo = {};
+            vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+            vertexInputInfo.vertexBindingDescriptionCount = 0;
+            vertexInputInfo.vertexAttributeDescriptionCount = 0;
+
+            /*
+             * After specifying the data format, we tell Vulkan how it would be
+             * used, possible values include:
+             *
+             *   - POINT_LIST: Each vertex will form an individual point
+             *   - LINE_LIST : Each pair of vertices will form a line
+             *   - LINE_STRIP: All vertices will join to create a joined line
+             *   - TRIANGLE_LIST: Each triplet of vertices will form disticnt triangles
+             *   - TRIANGLE_STRIP: All vertices will join to form a strip of triangles.
+             */
+            VkPipelineInputAssemblyStateCreateInfo inputAssembly = {};
+            inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+            inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+            inputAssembly.primitiveRestartEnable = VK_FALSE;
+
+            /*
+             * With the pipeline input taken care of, it's time to specify the viewport
+             * which is the region of the frambuffer we will render to.
+             */
+            VkViewport viewport = {};
+            viewport.x = 0.0f;
+            viewport.y = 0.0f;
+            viewport.width = (float) swapChainExtent.width;
+            viewport.height = (float) swapChainExtent.height;
+            viewport.minDepth = 0.0f;
+            viewport.maxDepth = 1.0f;
+
+            // And we can define 'scissors' which can be used to restrict
+            // regions of the viewport
+            VkRect2D scissor = {};
+            scissor.offset = {0, 0};
+            scissor.extent = swapChainExtent;
+
+            // Combining these two will give us the Viewport State
+            VkPipelineViewportStateCreateInfo viewportState = {};
+            viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+            viewportState.viewportCount = 1;
+            viewportState.pViewports = &viewport;
+            viewportState.scissorCount = 1;
+            viewportState.pScissors = &scissor;
+
+            // Next we configure the rasterizer
+            VkPipelineRasterizationStateCreateInfo rasterizer = {};
+            rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+            rasterizer.depthClampEnable = VK_FALSE;       // VK_TRUE, requires a feature.
+            rasterizer.rasterizerDiscardEnable = VK_FALSE;
+            rasterizer.polygonMode = VK_POLYGON_MODE_FILL;  // Other values require a feature.
+            rasterizer.lineWidth = 1.0f;        // Higher values require wideLines feature.
+            rasterizer.cullMode = VK_CULL_MODE_BACK_BIT; // Faces are visible from one side only
+            rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
+            rasterizer.depthBiasEnable = VK_FALSE;
+
+            /*
+             * Multi Sampling - Requires a Feature!
+             *
+             * This can be used to do anti-aliasing
+             */
+            VkPipelineMultisampleStateCreateInfo multisampling = {};
+            multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+            multisampling.sampleShadingEnable = VK_FALSE;
+            multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+            /*
+             * Color blending, here we will use Alpha blending
+             *
+             * You can define different color blends for different
+             * framebuffers the following struct configures the blending
+             * for a single buffer
+             */
+            VkPipelineColorBlendAttachmentState colorBlendAttachment = {};
+            colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT
+                                                | VK_COLOR_COMPONENT_G_BIT
+                                                | VK_COLOR_COMPONENT_B_BIT
+                                                | VK_COLOR_COMPONENT_A_BIT;
+            colorBlendAttachment.blendEnable = VK_TRUE;
+
+            // color = (X) * srcColor (OP) (Y) * dstColor
+            colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;   // (X)
+            colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;  // (Y)
+            colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;  // (OP)
+            // => color = (srcAlpha) * srcColor + (1 - srcAlpha) * dstColor
+
+            // alpha = (A) * srcAlpha (OP) (B) * dstAlpha
+            colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+            colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+            colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
+            // => alpha = (1) * srcAlpha + (0) * dstAlpha
+            //          = srcAlpha
+
+            /*
+             * This will reference all such above structs (we are only using
+             * one here) and allows us to define our own coefficients for the
+             * calculations above.
+             */
+            VkPipelineColorBlendStateCreateInfo colorBlending = {};
+            colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+            colorBlending.logicOpEnable = VK_FALSE;
+            colorBlending.attachmentCount = 1;
+            colorBlending.pAttachments = &colorBlendAttachment;
+
+            /*
+             * Dynamic State.
+             *
+             * There is a small number of options which CAN be defined at run time
+             * however we won't be doing this for now
+             */
+
+            /*
+             * There are things called UNIFORM values that we can use in our shaders
+             * these are global values we can set at runtime, to change the behavior
+             * of our shaders without rebuilding the entrie pipeline.
+             *
+             * Even though we aren't using them just yet we still need to create a
+             * Pipeline Layout object, which will hold these values.
+             */
+            VkPipelineLayoutCreateInfo pipelineLayoutInfo = {};
+            pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+
+            if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &pipelineLayout)
+                    != VK_SUCCESS) {
+                throw std::runtime_error("Unable to create the pipeline layout!!");
+            }
+
+
         }
 
         // -----------------------------------------------------------------------
