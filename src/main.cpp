@@ -210,6 +210,8 @@ class App {
         VDeleter<VkRenderPass> renderPass{device, vkDestroyRenderPass};
         VDeleter<VkPipeline> graphicsPipeline{device, vkDestroyPipeline};
 
+        std::vector<VDeleter<VkFramebuffer>> swapChainFramebuffers;
+
         /*
          * This function invokes GLFW and will create a window for us to
          * display our stuff in.
@@ -263,6 +265,9 @@ class App {
 
             // Step 9: Build the graphics pipeline
             createGraphicsPipeline();
+
+            // Step 10: Create the framebuffers
+            createFrameBuffers();
         }
 
         /*
@@ -1184,6 +1189,37 @@ class App {
                 throw std::runtime_error("Unable to create the graphics pipeline!!");
             }
 
+        }
+
+        /*
+         * This function creates our framebuffers for us
+         */
+        void createFrameBuffers() {
+
+            // We need a framebuffer for each image in the swap chain
+            swapChainFramebuffers.resize(swapChainImageViews.size(),
+                                         VDeleter<VkFramebuffer>{device, vkDestroyFramebuffer});
+
+            for (size_t i = 0; i < swapChainImageViews.size(); i++) {
+
+                VkImageView attachments [] = {
+                    swapChainImageViews[i]
+                };
+
+                VkFramebufferCreateInfo framebufferInfo = {};
+                framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+                framebufferInfo.renderPass = renderPass;
+                framebufferInfo.attachmentCount = 1;
+                framebufferInfo.pAttachments = attachments;
+                framebufferInfo.width = swapChainExtent.width;
+                framebufferInfo.height = swapChainExtent.height;
+                framebufferInfo.layers = 1;
+
+                if (vkCreateFramebuffer(device, &framebufferInfo, nullptr, &swapChainFramebuffers[i])
+                        != VK_SUCCESS) {
+                    std::runtime_error("Unable to create framebuffer!!");
+                }
+            }
         }
 
         // -----------------------------------------------------------------------
