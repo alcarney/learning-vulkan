@@ -212,6 +212,10 @@ class App {
 
         std::vector<VDeleter<VkFramebuffer>> swapChainFramebuffers;
 
+        // Command Pool
+        VDeleter<VkCommandPool> commandPool{device, vkDestroyCommandPool};
+        std::vector<VkCommandBuffer> commandBuffers;
+
         /*
          * This function invokes GLFW and will create a window for us to
          * display our stuff in.
@@ -268,6 +272,12 @@ class App {
 
             // Step 10: Create the framebuffers
             createFrameBuffers();
+
+            // Step 11: Create the command pool
+            createCommandPool();
+
+            // Step 12: Create the command buffers
+            createCommandBuffers();
         }
 
         /*
@@ -1221,6 +1231,118 @@ class App {
                 }
             }
         }
+
+        /*
+         * This function will create the command buffer for us
+         */
+        void createCommandPool () {
+
+            /*
+             * Command Pools allocate and manage comamnd buffers. They
+             * only managed buffers that can be submitted to a single
+             * type of queue and since we want to draw something, then
+             * we need to create buffers that will be submitted to the
+             * graphics queue.
+             */
+            QueueFamilyIndices queueFamilyIndices = findQueueFamilies(physicalDevice);
+
+            VkCommandPoolCreateInfo poolInfo = {};
+            poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+            poolInfo.queueFamilyIndex = queueFamilyIndices.graphicsFamily;
+
+            if (vkCreateCommandPool(device, &poolInfo, nullptr, &commandPool)
+                    != VK_SUCCESS) {
+                throw std::runtime_error("Unable to create the command pool!!");
+            }
+        }
+
+        /*
+         * This function will create and 'record' our command
+         * buffers for us
+         */
+        void createCommandBuffers() {
+
+            /*
+             * So... we need a command buffer for each framebuffer
+             * in the swapchain... for reasons.
+             */
+            commandBuffers.resize(swapChainFramebuffers.size());
+
+            /*
+             * For our case we will be using "Primary" command buffers.
+             * We can submit them directly to a queue, but we can't use them
+             * from other buffers.
+             *
+             * There are "Secondary" buffers, which we can't submit directly
+             * to a queue, but they can be called from a number of different
+             * queues.
+             */
+            VkCommandBufferAllocateInfo allocInfo = {};
+            allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+            allocInfo.commandPool = commandPool;
+            allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+            allocInfo.commandBufferCount = (uint32_t) commandBuffers.size();
+
+            if (vkAllocateCommandBuffers(device, &allocInfo, commandBuffers.data())
+                    != VK_SUCCESS) {
+                throw std::runtime_error("Unable to allocate command buffers!!");
+            }
+
+            /*
+             * With the command buffers allocated, we can start "recording"
+             * commands to then, after of course giving some info about
+             * how they will be used
+             */
+            for (size_t i = 0; i < commandBuffers.size(); i++) {
+                VkCommandBufferBeginInfo beginInfo = {};
+                beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+                beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
+
+                vkBeginCommandBuffer(commandBuffers[i], &beginInfo);
+
+                // Now that the buffer is "open", ready to receive commands
+                // in this case 'execute the render pass we defined earlier'
+                VkRenderPassBeginInfo renderPassInfo = {};
+                renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+                renderPassInfo.renderPass = renderPass;
+                renderPassInfo.framebuffer = swapChainFramebuffers[i];
+                renderPassInfo.renderArea.offset = {0, 0};
+                renderPassInfo.renderArea.extent = swapChainExtent;
+
+                VkClearValue clearColor = {0.0f, 0.0f, 0.0f, 1.0f};
+                renderPassInfo.clearValueCount = 1;
+                renderPassInfo.pClearValues = &clearColor;
+
+                // Submit the command (Do the render)
+                vkCmdBeginRenderPass(commandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+                // Now we need to tell the command buffer which pipeline it should use
+                vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
+
+                /*
+                 * What are we drawing?
+                 *
+                 * 3 vertices, starting from index 0 of the vertex buffer.
+                 * (This will set the value of gl_VertexIndex in the vertex shader)
+                 *
+                 * The one and the second zero in the arguments are used when we do
+                 * instance rendering. Which we aren't using in our case so just leave
+                 * them as is
+                 */
+                vkCmdDraw(commandBuffers[i], 3, 1, 0, 0);
+
+                // Tell vulkan to end the render pass
+                vkCmdEndRenderPass(commandBuffers[i]);
+
+                // End recording to the buffer and check for errors
+                if (vkEndCommandBuffer(commandBuffers[i]) != VK_SUCCESS) {
+                    throw std::runtime_error("Unable to record the command buffer!!");
+                }
+
+            }
+
+        }
+
 
         // -----------------------------------------------------------------------
 
