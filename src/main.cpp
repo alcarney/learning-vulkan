@@ -216,6 +216,10 @@ class App {
         VDeleter<VkCommandPool> commandPool{device, vkDestroyCommandPool};
         std::vector<VkCommandBuffer> commandBuffers;
 
+        // Semaphores
+        VDeleter<VkSemaphore> imageAvailableSemaphore{device, vkDestroySemaphore};
+        VDeleter<VkSemaphore> renderFinishedSemaphore{device, vkDestroySemaphore};
+
         /*
          * This function invokes GLFW and will create a window for us to
          * display our stuff in.
@@ -278,6 +282,9 @@ class App {
 
             // Step 12: Create the command buffers
             createCommandBuffers();
+
+            // Step 13: Create the Semaphores
+            createSemaphores();
         }
 
         /*
@@ -1005,6 +1012,21 @@ class App {
             renderPassInfo.subpassCount = 1;
             renderPassInfo.pSubpasses = &subPass;
 
+            // Some stuff about subpass dependencies I don't quite get right now
+            // Apparently there are implicit dependenices and the default syncronisation
+            // cues are wrong. So this will fix that
+            VkSubpassDependency dependency = {};
+            dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+            dependency.dstSubpass = 0;
+            dependency.srcStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+            dependency.srcAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+            dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+            dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT
+                                     | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
+            renderPassInfo.dependencyCount = 1;
+            renderPassInfo.pDependencies = &dependency;
+
             if (vkCreateRenderPass(device, &renderPassInfo, nullptr, &renderPass)
                 != VK_SUCCESS) {
                 throw std::runtime_error("Unable to create render pass!!");
@@ -1343,15 +1365,112 @@ class App {
 
         }
 
+        /*
+         * This function is responsible for creating semaphores
+         */
+        void createSemaphores() {
+
+            // In the current version of the API there
+            // aren't any options for a semaphore needed
+            // to create it. However a struct is stil
+            // required
+            VkSemaphoreCreateInfo semaphoreInfo = {};
+            semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+
+            if (vkCreateSemaphore(device, &semaphoreInfo, nullptr, &imageAvailableSemaphore) != VK_SUCCESS
+             || vkCreateSemaphore(device, &semaphoreInfo, nullptr, &renderFinishedSemaphore) != VK_SUCCESS) {
+                throw std::runtime_error("Unable to create the semaphores!!");
+            }
+        }
+
 
         // -----------------------------------------------------------------------
+
+        /*
+         * This does everything required to get a frame on screen
+         */
+        void drawFrame() {
+
+            /*
+             * Everything in Vulkan is done asynchronously, which means the
+             * order of execution isn't guaranteed. However in the case of
+             * say drawing a frame each step depends on the previous one.
+             *
+             * Vulkan provides two 'objects' for syncronisation, Fences and
+             * Semaphores. The state of a fence can be queried which makes them
+             * ideal for integrating your application with the render process
+             * in Vulkan.
+             *
+             * You can't however do this with Semaphores, which makes them
+             * more suited to coordinating events within the render process
+             * itself.
+             *
+             * We will be using semaphores here.
+             */
+
+            uint32_t imageIndex;
+
+            // Step one. Retrieve the next image from the swap chain
+
+            // Third argument states a timeout in nanoseconds, using the max
+            // value disables the timeout
+            vkAcquireNextImageKHR(device, swapChain, std::numeric_limits<uint64_t>::max(),
+                                  imageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex);
+
+            // Step two. Now we know the image we can draw to, time to select the
+            // correct command buffer and submit it to the queue
+            VkSubmitInfo submitInfo = {};
+            submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+
+            VkSemaphore waitSemaphores[] = {imageAvailableSemaphore};
+            VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
+            submitInfo.waitSemaphoreCount = 1;
+            submitInfo.pWaitSemaphores = waitSemaphores;
+            submitInfo.pWaitDstStageMask = waitStages;
+            submitInfo.commandBufferCount = 1;
+            submitInfo.pCommandBuffers = &commandBuffers[imageIndex];
+
+            // Signal the render finished Semaphore when finished so the next
+            // stage knows it's ok to continue
+            VkSemaphore signalSemaphores[] = {renderFinishedSemaphore};
+            submitInfo.signalSemaphoreCount = 1;
+            submitInfo.pSignalSemaphores = signalSemaphores;
+
+            // Submit the render command to the queue to be executed.
+            // The submit function can actually take an array of commands
+            // so we can do things in batches when we need to.
+            if (vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS) {
+                throw std::runtime_error("Unable to submit the draw command!!");
+            }
+
+            // Step 3. With the image rendered, we need it to be released to the
+            // swap chain so it can be presented to the screen.
+            VkPresentInfoKHR presentInfo = {};
+            presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+            presentInfo.waitSemaphoreCount = 1;
+            presentInfo.pWaitSemaphores = signalSemaphores; // Wait for the render semaphore
+
+            // We need to which swapChain to present to
+            VkSwapchainKHR swapChains[] = {swapChain};
+            presentInfo.swapchainCount = 1;
+            presentInfo.pSwapchains = swapChains;
+            presentInfo.pImageIndices = &imageIndex;
+
+            // Finally present the rendered image to the screen
+            vkQueuePresentKHR(presentQueue, &presentInfo);
+
+        }
 
         void mainLoop() {
 
             // Keep the main window open till it's asked to close
             while (!glfwWindowShouldClose(window)) {
                 glfwPollEvents();
+                drawFrame();
             }
+
+            // Wait for the device to finish before closing
+            vkDeviceWaitIdle(device);
         }
 };
 
